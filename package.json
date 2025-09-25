@@ -1,0 +1,23 @@
+{
+  "name": "quintoandar-monitor",
+  "version": "1.0.0",
+  "description": "Monitor QuintoAndar apartments and send Telegram notifications",
+  "main": "monitor.js",
+  "scripts": {
+    "start": "node monitor.js"
+  },
+  "dependencies": {
+    "axios": "^1.12.2",
+    "cheerio": "^1.1.2",
+    "express": "^5.1.0",
+    "node-telegram-bot-api": "^0.64.0"
+  },
+  "keywords": [
+    "monitor",
+    "telegram",
+    "quintoandar",
+    "apartments"
+  ],
+  "author": "",
+  "license": "MIT"
+}
