@@ -136,8 +136,3 @@ startMonitoring().catch(error => {
   console.error('💥 Failed to start monitor:', error);
   process.exit(1);
 });
-// 🔁 Démarrer le monitoring automatique
-startMonitoring().catch(error => {
-  console.error('💥 Failed to start monitor:', error);
-  process.exit(1);
-});
