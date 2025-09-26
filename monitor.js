@@ -47,15 +47,20 @@ async function checkURL(url) {
   try {
     console.log(`🔍 Checking: ${url}`);
     const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0'
-      },
+      headers: { 'User-Agent': 'Mozilla/5.0' },
       timeout: 30000
     });
 
     const $ = cheerio.load(response.data);
-    const pageText = $('body').text();
-    const phraseFound = pageText.includes(TARGET_PHRASE);
+    let pageText = $('body').text();
+
+    // Nettoyage minimal pour enlever retours à la ligne / espaces multiples
+    const cleanedText = pageText.replace(/\s+/g, ' ').trim();
+
+    // Log pour voir exactement ce que le script lit
+    console.log('📄 Cleaned page text snippet:', cleanedText.slice(0, 300)); // 300 caractères suffisent
+
+    const phraseFound = cleanedText.includes(TARGET_PHRASE);
 
     const state = urlStates[url];
     const currentTime = new Date().toISOString();
@@ -129,6 +134,12 @@ app.get('/run', async (req, res) => {
 // 🚀 Lancer le serveur Express
 app.listen(3000, () => {
   console.log('🚀 Serveur Express lancé sur le port 3000');
+});
+
+// 🔁 Démarrer le monitoring automatique
+startMonitoring().catch(error => {
+  console.error('💥 Failed to start monitor:', error);
+  process.exit(1);
 });
 
 // 🔁 Démarrer le monitoring automatique
