@@ -10,7 +10,7 @@ const URLS = [
   'https://www.quintoandar.com.br/alugar/imovel/ilha-dos-caicaras-lagoa-rio-de-janeiro-rj-brasil/de-500-a-3500-reais/apartamento/kitnet/1-quartos'
 ];
 
-const TARGET_PHRASE = 'Não há imóveis no QuintoAndar para esta busca.';
+const TARGET_PHRASE = 'Não temos imóveis disponíveis com todos esses critérios na região.';
 const CHECK_INTERVAL = 60000; // 1 minute
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
