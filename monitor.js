@@ -1,5 +1,4 @@
 const axios = require('axios');
-const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const app = express();
@@ -10,9 +9,7 @@ const URLS = [
   'https://www.quintoandar.com.br/alugar/imovel/ilha-dos-caicaras-lagoa-rio-de-janeiro-rj-brasil/de-500-a-3500-reais/apartamento/kitnet/1-quartos'
 ];
 
-const TARGET_PHRASE = 'Não temos imóveis disponíveis com todos esses critérios na região.';
 const CHECK_INTERVAL = 60000; // 1 minute
-
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
@@ -53,28 +50,27 @@ async function checkURL(url) {
       timeout: 30000
     });
 
-    const $ = cheerio.load(response.data);
-    const pageText = $('body').text();
-    const phraseFound = pageText.includes(TARGET_PHRASE);
+    const html = response.data.toLowerCase();
+    const hasApartmentCard = html.includes('cozy__cardrow-container');
 
     const state = urlStates[url];
     const currentTime = new Date().toISOString();
 
-    if (state.lastPhraseFound !== phraseFound) {
-      if (phraseFound) {
-        console.log('❌ No apartments available (phrase found)');
+    if (state.lastPhraseFound !== hasApartmentCard) {
+      if (hasApartmentCard) {
+        console.log('✅ APARTMENTS AVAILABLE! (card found)');
         if (state.lastPhraseFound === false) {
-          await sendTelegramNotification(`🏠 QuintoAndar Update: Apartments are no longer available.\n\nURL: ${url}`);
-        }
-      } else {
-        console.log('✅ APARTMENTS AVAILABLE! (phrase not found)');
-        if (state.lastPhraseFound === true) {
           await sendTelegramNotification(`🎉 GREAT NEWS! New apartments are now available!\n\nURL: ${url}`);
         }
+      } else {
+        console.log('❌ No apartments available (card not found)');
+        if (state.lastPhraseFound === true) {
+          await sendTelegramNotification(`🏠 QuintoAndar Update: Apartments are no longer available.\n\nURL: ${url}`);
+        }
       }
-      state.lastPhraseFound = phraseFound;
+      state.lastPhraseFound = hasApartmentCard;
     } else {
-      console.log(`ℹ️ Status unchanged: ${phraseFound ? 'No apartments' : 'Apartments available'}`);
+      console.log(`ℹ️ Status unchanged: ${hasApartmentCard ? 'Apartments available' : 'No apartments'}`);
     }
 
     state.lastChecked = currentTime;
@@ -98,7 +94,7 @@ async function checkAllURLs() {
 async function startMonitoring() {
   console.log('🚀 Starting QuintoAndar Monitor...');
   console.log(`📍 Monitoring ${URLS.length} URLs every ${CHECK_INTERVAL / 1000} seconds`);
-  console.log(`🔍 Looking for phrase: "${TARGET_PHRASE}"`);
+  console.log(`🔍 Looking for apartment card: "cozy__cardrow-container"`);
 
   if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
     console.log('📱 Telegram notifications: ENABLED');
