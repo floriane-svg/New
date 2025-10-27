@@ -3,132 +3,154 @@ const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const app = express();
 
-// Configuration
-const URLS = [
-  'https://www.quintoandar.com.br/alugar/imovel/leblon-rio-de-janeiro-rj-brasil/de-500-a-3500-reais/apartamento/kitnet/1-quartos',
-  'https://www.quintoandar.com.br/alugar/imovel/ilha-dos-caicaras-lagoa-rio-de-janeiro-rj-brasil/de-500-a-3500-reais/apartamento/kitnet/1-quartos'
+// === CONFIGURATION ===
+const CONFIG = [
+  {
+    url: 'https://www.quintoandar.com.br/alugar/imovel/leblon-rio-de-janeiro-rj-brasil/de-500-a-3500-reais/apartamento/kitnet/1-quartos',
+    label: 'Leblon',
+    minCount: 5 // doit trouver 5 occurrences ou plus
+  },
+  {
+    url: 'https://www.quintoandar.com.br/alugar/imovel/ilha-dos-caicaras-lagoa-rio-de-janeiro-rj-brasil/de-500-a-3500-reais/apartamento/kitnet/1-quartos',
+    label: 'Ilha dos Caiçaras',
+    minCount: 1 // doit trouver au moins 1 occurrence
+  }
 ];
 
 const CHECK_INTERVAL = 60000; // 1 minute
+const RETRY_DELAY = 1500;
+const MAX_RETRIES = 2;
+const SEARCH_PHRASE = 'cozy__cardrow-container';
+
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+// === TELEGRAM ===
 let bot = null;
 if (TELEGRAM_BOT_TOKEN) {
   bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 }
 
-const urlStates = {};
-URLS.forEach(url => {
-  urlStates[url] = {
-    lastPhraseFound: null,
-    lastChecked: null
-  };
-});
-
 async function sendTelegramNotification(message) {
   if (!bot || !TELEGRAM_CHAT_ID) {
-    console.log('⚠️ Telegram not configured. Message would have been:', message);
+    console.log('⚠️ Telegram non configuré. Message aurait été :', message);
+    return;
+  }
+  try {
+    await bot.sendMessage(TELEGRAM_CHAT_ID, message);
+    console.log('📱 Notification Telegram envoyée');
+  } catch (error) {
+    console.error('❌ Erreur Telegram :', error.message);
+  }
+}
+
+// === ÉTAT ===
+const urlStates = {};
+CONFIG.forEach(site => {
+  urlStates[site.url] = { lastAboveThreshold: null, lastChecked: null, lastCount: 0 };
+});
+
+// === COMPTE LES OCCURRENCES ===
+function countOccurrences(html, phrase) {
+  const matches = html.match(new RegExp(phrase, 'g'));
+  return matches ? matches.length : 0;
+}
+
+// === CHECK INDIVIDUEL ===
+async function checkURL(site) {
+  const { url, label, minCount } = site;
+  let success = false;
+  let count = 0;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🔍 [${label}] Tentative ${attempt} sur ${url}`);
+      const response = await axios.get(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        timeout: 25000
+      });
+      const html = response.data.toLowerCase();
+      count = countOccurrences(html, SEARCH_PHRASE);
+      success = true;
+      break;
+    } catch (error) {
+      console.error(`⚠️ [${label}] Erreur tentative ${attempt}: ${error.message}`);
+      if (attempt < MAX_RETRIES) {
+        console.log(`⏳ Nouvelle tentative dans ${RETRY_DELAY / 1000}s...`);
+        await new Promise(r => setTimeout(r, RETRY_DELAY));
+      }
+    }
+  }
+
+  const state = urlStates[url];
+  if (!success) {
+    await sendTelegramNotification(`🚨 Impossible de vérifier ${label} après ${MAX_RETRIES} tentatives.\n${url}`);
     return;
   }
 
-  try {
-    await bot.sendMessage(TELEGRAM_CHAT_ID, message);
-    console.log('📱 Telegram notification sent successfully');
-  } catch (error) {
-    console.error('❌ Error sending Telegram notification:', error.message);
-  }
-}
+  const aboveThreshold = count >= minCount;
+  console.log(`[monitor] ${count} occurrence(s) trouvée(s) sur ${label} (${aboveThreshold ? 'SEUIL ATTEINT ✅' : 'sous le seuil ❌'})`);
 
-async function checkURL(url) {
-  try {
-    console.log(`🔍 Checking: ${url}`);
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0'
-      },
-      timeout: 30000
-    });
-
-    const html = response.data.toLowerCase();
-    const hasApartmentCard = html.includes('cozy__cardrow-container');
-
-    const state = urlStates[url];
-    const currentTime = new Date().toISOString();
-
-    if (state.lastPhraseFound !== hasApartmentCard) {
-      if (hasApartmentCard) {
-        console.log('✅ APARTMENTS AVAILABLE! (card found)');
-        if (state.lastPhraseFound === false) {
-          await sendTelegramNotification(`🎉 GREAT NEWS! New apartments are now available!\n\nURL: ${url}`);
-        }
-      } else {
-        console.log('❌ No apartments available (card not found)');
-        if (state.lastPhraseFound === true) {
-          await sendTelegramNotification(`🏠 QuintoAndar Update: Apartments are no longer available.\n\nURL: ${url}`);
-        }
-      }
-      state.lastPhraseFound = hasApartmentCard;
+  // si l’état a changé
+  if (state.lastAboveThreshold !== aboveThreshold) {
+    if (aboveThreshold) {
+      await sendTelegramNotification(
+        `🏠 Alerte ${label} (${count} annonces détectées, seuil = ${minCount})\n${url}`
+      );
     } else {
-      console.log(`ℹ️ Status unchanged: ${hasApartmentCard ? 'Apartments available' : 'No apartments'}`);
+      await sendTelegramNotification(`📉 ${label}: le nombre d'annonces est retombé à ${count} (${minCount} requis)\n${url}`);
     }
-
-    state.lastChecked = currentTime;
-  } catch (error) {
-    console.error(`❌ Error checking ${url}:`, error.message);
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      await sendTelegramNotification(`⚠️ Error monitoring QuintoAndar: ${error.message}\n\nURL: ${url}`);
-    }
+    state.lastAboveThreshold = aboveThreshold;
   }
+
+  state.lastChecked = new Date().toISOString();
+  state.lastCount = count;
 }
 
+// === CHECK GLOBAL ===
 async function checkAllURLs() {
-  console.log(`\n📅 ${new Date().toISOString()} - Starting check cycle`);
-  for (const url of URLS) {
-    await checkURL(url);
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  console.log(`\n📅 ${new Date().toISOString()} - Début du cycle`);
+  for (const site of CONFIG) {
+    await checkURL(site);
+    await new Promise(r => setTimeout(r, 2000));
   }
-  console.log('✅ Check cycle completed\n');
+  console.log('✅ Cycle terminé\n');
 }
 
+// === DÉMARRAGE ===
 async function startMonitoring() {
-  console.log('🚀 Starting QuintoAndar Monitor...');
-  console.log(`📍 Monitoring ${URLS.length} URLs every ${CHECK_INTERVAL / 1000} seconds`);
-  console.log(`🔍 Looking for apartment card: "cozy__cardrow-container"`);
+  console.log('🚀 Démarrage du moniteur Render');
+  console.log(`🔍 Mot-clé : "${SEARCH_PHRASE}"`);
+  console.log(`⏰ Intervalle : ${CHECK_INTERVAL / 1000}s`);
+  console.log(`📱 Notifications Telegram : ${bot ? 'activées' : 'désactivées'}`);
 
-  if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
-    console.log('📱 Telegram notifications: ENABLED');
-    await sendTelegramNotification('🤖 QuintoAndar Monitor started! I will notify you when apartments become available.');
-  } else {
-    console.log('📱 Telegram notifications: DISABLED');
+  if (bot && TELEGRAM_CHAT_ID) {
+    await sendTelegramNotification('🤖 Moniteur Render démarré (avec seuils personnalisés).');
   }
 
   await checkAllURLs();
   setInterval(checkAllURLs, CHECK_INTERVAL);
 }
 
-process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutting down QuintoAndar Monitor...');
-  if (bot && TELEGRAM_CHAT_ID) {
-    await sendTelegramNotification('🛑 QuintoAndar Monitor stopped.');
-  }
-  process.exit(0);
-});
-
-// 🔥 Route déclenchable via navigateur ou cron-job.org
+// === ROUTE MANUELLE ===
 app.get('/run', async (req, res) => {
   console.log('🌐 Route /run déclenchée');
   await checkAllURLs();
   res.send('✅ Vérification manuelle terminée');
 });
 
-// 🚀 Lancer le serveur Express
-app.listen(3000, () => {
-  console.log('🚀 Serveur Express lancé sur le port 3000');
+// === ARRÊT PROPRE ===
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Arrêt du moniteur...');
+  if (bot && TELEGRAM_CHAT_ID) {
+    await sendTelegramNotification('🛑 Moniteur Render arrêté.');
+  }
+  process.exit(0);
 });
 
-// 🔁 Démarrer le monitoring automatique
-startMonitoring().catch(error => {
-  console.error('💥 Failed to start monitor:', error);
+// === SERVEUR EXPRESS ===
+app.listen(3000, () => console.log('🚀 Serveur Express lancé sur le port 3000'));
+startMonitoring().catch(err => {
+  console.error('💥 Échec du démarrage :', err);
   process.exit(1);
 });
