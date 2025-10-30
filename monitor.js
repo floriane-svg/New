@@ -8,12 +8,12 @@ const CONFIG = [
   {
     url: 'https://www.quintoandar.com.br/alugar/imovel/leblon-rio-de-janeiro-rj-brasil/de-500-a-3500-reais/apartamento/kitnet/1-quartos',
     label: 'Leblon',
-    minCount: 5 // doit trouver 5 occurrences ou plus
+    minCount: 1 // 👈 alerte dès qu’il y a au moins 1 annonce
   },
   {
     url: 'https://www.quintoandar.com.br/alugar/imovel/ilha-dos-caicaras-lagoa-rio-de-janeiro-rj-brasil/de-500-a-3500-reais/apartamento/kitnet/1-quartos',
     label: 'Ilha dos Caiçaras',
-    minCount: 1 // doit trouver au moins 1 occurrence
+    minCount: 1 // 👈 idem
   }
 ];
 
@@ -52,7 +52,8 @@ CONFIG.forEach(site => {
 
 // === COMPTE LES OCCURRENCES ===
 function countOccurrences(html, phrase) {
-  const matches = html.match(new RegExp(phrase, 'g'));
+  // insensible à la casse
+  const matches = html.match(new RegExp(phrase, 'gi'));
   return matches ? matches.length : 0;
 }
 
@@ -66,10 +67,14 @@ async function checkURL(site) {
     try {
       console.log(`🔍 [${label}] Tentative ${attempt} sur ${url}`);
       const response = await axios.get(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
+        headers: { 
+          'User-Agent': 'Mozilla/5.0',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
         timeout: 25000
       });
-      const html = response.data.toLowerCase();
+      const html = response.data;
       count = countOccurrences(html, SEARCH_PHRASE);
       success = true;
       break;
@@ -82,27 +87,23 @@ async function checkURL(site) {
     }
   }
 
-  const state = urlStates[url];
   if (!success) {
     await sendTelegramNotification(`🚨 Impossible de vérifier ${label} après ${MAX_RETRIES} tentatives.\n${url}`);
     return;
   }
 
+  const state = urlStates[url];
   const aboveThreshold = count >= minCount;
   console.log(`[monitor] ${count} occurrence(s) trouvée(s) sur ${label} (${aboveThreshold ? 'SEUIL ATTEINT ✅' : 'sous le seuil ❌'})`);
 
-  // si l’état a changé
-  if (state.lastAboveThreshold !== aboveThreshold) {
-    if (aboveThreshold) {
-      await sendTelegramNotification(
-        `🏠 Alerte ${label} (${count} annonces détectées, seuil = ${minCount})\n${url}`
-      );
-    } else {
-      await sendTelegramNotification(`📉 ${label}: le nombre d'annonces est retombé à ${count} (${minCount} requis)\n${url}`);
-    }
-    state.lastAboveThreshold = aboveThreshold;
+  // 👇 notification uniquement si on vient de passer AU-DESSUS du seuil
+  if (!state.lastAboveThreshold && aboveThreshold) {
+    await sendTelegramNotification(
+      `🏠 Alerte ${label} (${count} annonce${count > 1 ? 's' : ''} détectée${count > 1 ? 's' : ''})\n${url}`
+    );
   }
 
+  state.lastAboveThreshold = aboveThreshold;
   state.lastChecked = new Date().toISOString();
   state.lastCount = count;
 }
@@ -125,7 +126,7 @@ async function startMonitoring() {
   console.log(`📱 Notifications Telegram : ${bot ? 'activées' : 'désactivées'}`);
 
   if (bot && TELEGRAM_CHAT_ID) {
-    await sendTelegramNotification('🤖 Moniteur Render démarré (avec seuils personnalisés).');
+    await sendTelegramNotification('🤖 Moniteur Render démarré (alerte dès 1 annonce).');
   }
 
   await checkAllURLs();
