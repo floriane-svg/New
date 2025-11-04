@@ -4,13 +4,14 @@ Système de surveillance automatique pour les annonces QuintoAndar avec alertes 
 
 ## 🎯 Fonctionnalités
 
-- ✅ Surveillance automatique toutes les minutes
+- ✅ Endpoint `/run` pour déclenchement par cron externe
 - ✅ Détection ultra-robuste du mot-clé avec multiples retries
 - ✅ Extraction complète du code source HTML
 - ✅ Rotation de User-Agents pour éviter les blocages
 - ✅ Seuils d'alerte configurables
 - ✅ Notifications Telegram au démarrage et lors des alertes
 - ✅ Health check pour Render
+- ✅ Compatible avec le plan gratuit de Render (réveillé par cron externe)
 
 ## 🚀 Déploiement sur Render
 
@@ -30,7 +31,7 @@ Dans les paramètres de votre service Render, ajoutez:
 
 - `TELEGRAM_TOKEN`: Votre token de bot Telegram
 - `TELEGRAM_CHAT_ID`: Votre ID de chat Telegram
-- `PORT`: 5000 (défini automatiquement par Render)
+- `PORT`: 10000 (défini automatiquement par Render)
 
 ### 3. Obtenir vos identifiants Telegram
 
@@ -43,7 +44,17 @@ Dans les paramètres de votre service Render, ajoutez:
 1. Parlez à [@userinfobot](https://t.me/userinfobot) sur Telegram
 2. Il vous donnera votre Chat ID
 
-### 4. Déployer
+### 4. Configurer le Cron Externe
+
+Pour réveiller votre service Render gratuit et déclencher les vérifications:
+
+1. Utilisez un service de cron gratuit comme [cron-job.org](https://cron-job.org) ou [Easycron](https://www.easycron.com/)
+2. Configurez une tâche pour appeler votre URL toutes les minutes:
+   - URL: `https://votre-service.onrender.com/run`
+   - Intervalle: Toutes les minutes
+3. Le service se réveillera et effectuera la vérification à chaque appel
+
+### 5. Déployer
 
 Une fois configuré, Render déploiera automatiquement votre application.
 
@@ -70,6 +81,7 @@ urls: [
 
 - `GET /` - Statut du service
 - `GET /health` - Health check pour Render
+- `GET /run` - Endpoint pour cron externe (déclenche la vérification)
 - `GET /check-now` - Déclencher une vérification manuelle
 
 ## 📊 Logs
@@ -98,11 +110,12 @@ npm start
 
 ## 📝 Notes
 
-- Le service vérifie les URLs **toutes les minutes**
+- Le service est réveillé par un **cron externe** qui appelle `/run`
 - Chaque vérification peut faire jusqu'à 4 tentatives pour garantir la détection
-- Les User-Agents sont changés aléatoirement pour éviter les blocages
+- Les User-Agents sont changés aléatoirement à chaque tentative pour éviter les blocages
 - La page HTML est validée pour s'assurer qu'elle est complète
 - Le mot-clé est recherché de manière insensible à la casse
+- Compatible avec le plan gratuit de Render (qui s'endort après 15 min d'inactivité)
 
 ## 🔧 Dépannage
 

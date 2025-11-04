@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const cron = require('node-cron');
 const Monitor = require('./monitor');
 
 const PORT = process.env.PORT || 3000;
@@ -35,6 +34,22 @@ app.get('/health', (req, res) => {
     status: 'healthy',
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/run', async (req, res) => {
+  if (isMonitoring) {
+    return res.status(429).json({ 
+      error: 'Une vérification est déjà en cours',
+      lastCheck: lastCheckTime
+    });
+  }
+
+  res.json({ 
+    message: 'Vérification démarrée par cron externe',
+    timestamp: new Date().toISOString()
+  });
+
+  runMonitoringTask();
 });
 
 app.get('/check-now', async (req, res) => {
@@ -72,10 +87,6 @@ async function runMonitoringTask() {
   }
 }
 
-cron.schedule('* * * * *', () => {
-  monitor.log('⏰ Cron job déclenché - Démarrage de la vérification programmée');
-  runMonitoringTask();
-});
 
 const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log('\n' + '█'.repeat(60));
@@ -83,16 +94,12 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log('█'.repeat(60));
   console.log(`✅ Serveur démarré sur le port ${PORT}`);
   console.log(`📡 Health check: http://localhost:${PORT}/health`);
-  console.log(`⏰ Surveillance: Toutes les minutes`);
+  console.log(`🔄 Endpoint pour cron: /run`);
+  console.log(`⏰ Déclenché par cron externe`);
   console.log(`🔍 Mot-clé surveillé: "${require('./config').keyword}"`);
   console.log('█'.repeat(60) + '\n');
 
   await monitor.sendStartupNotification();
-  
-  monitor.log('⏳ Première vérification dans 10 secondes...');
-  setTimeout(() => {
-    runMonitoringTask();
-  }, 10000);
 });
 
 process.on('SIGTERM', () => {
