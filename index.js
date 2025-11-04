@@ -3,7 +3,7 @@ const express = require('express');
 const cron = require('node-cron');
 const Monitor = require('./monitor');
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
