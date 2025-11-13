@@ -5,9 +5,9 @@ Système de monitoring pour surveiller les annonces QuintoAndar. Déclenché par
 
 ## Architecture
 - **Backend**: Node.js + Express
+- **Browser**: Puppeteer (Chrome headless) pour JavaScript complet
 - **Scheduling**: Cron externe (appelle `/run`)
-- **HTTP Client**: axios avec retry et timeout
-- **HTML Parsing**: cheerio pour validation
+- **HTTP Client**: axios pour Telegram uniquement
 - **Alertes**: Telegram Bot API
 
 ## Fichiers Principaux
@@ -36,7 +36,11 @@ Système de monitoring pour surveiller les annonces QuintoAndar. Déclenché par
 - `GET /check-now` - Vérification manuelle
 
 ## Dernières Modifications
-- 2025-11-04: Création initiale du système de monitoring
+- 2025-11-04: **Migration vers Puppeteer**
+  - Utilisation de Chrome headless pour chargement JavaScript complet
+  - Détection instantanée des nouvelles annonces
+  - Attente du chargement des sélecteurs CardRow
+  - Configuration spécifique pour Render
 - 2025-11-04: Adaptation pour cron externe Render (plan gratuit)
   - Suppression du cron interne
   - Ajout de l'endpoint `/run`

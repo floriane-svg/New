@@ -1,4 +1,12 @@
-# 🚀 Guide de Déploiement sur Render
+# 🚀 Guide de Déploiement sur Render (avec Puppeteer)
+
+## ⚡ Pourquoi Puppeteer ?
+
+Ce système utilise **Puppeteer** (navigateur Chrome headless) pour :
+- ✅ Charger le JavaScript complet de la page
+- ✅ Détecter les nouvelles annonces **instantanément**
+- ✅ Voir exactement ce qu'un utilisateur réel verrait
+- ✅ Pas de délai de détection
 
 ## Étapes Rapides
 
@@ -16,7 +24,7 @@ Utilisez ces paramètres :
 - **Name**: `quintoandar-monitor` (ou votre choix)
 - **Region**: Oregon (US West) ou votre préférence
 - **Branch**: `main`
-- **Build Command**: `npm install`
+- **Build Command**: `npm install && npx puppeteer browsers install chrome`
 - **Start Command**: `npm start`
 - **Instance Type**: Free (ou Starter pour plus de fiabilité)
 
@@ -29,6 +37,7 @@ Ajoutez ces variables dans l'onglet "Environment" :
 | `TELEGRAM_TOKEN` | Votre token de bot (ex: 123456789:ABCdef...) |
 | `TELEGRAM_CHAT_ID` | Votre chat ID (ex: 123456789) |
 | `PORT` | 10000 |
+| `PUPPETEER_CACHE_DIR` | /opt/render/.cache/puppeteer |
 
 ⚠️ **Important** : Ne partagez jamais ces tokens publiquement !
 

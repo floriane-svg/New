@@ -1,5 +1,5 @@
 const axios = require('axios');
-const cheerio = require('cheerio');
+const puppeteer = require('puppeteer');
 const config = require('./config');
 
 class Monitor {
@@ -7,6 +7,7 @@ class Monitor {
     this.telegramToken = telegramToken;
     this.telegramChatId = telegramChatId;
     this.telegramApi = `https://api.telegram.org/bot${telegramToken}/sendMessage`;
+    this.browser = null;
   }
 
   getRandomUserAgent() {
@@ -18,53 +19,120 @@ class Monitor {
     console.log(`[${timestamp}] [${level.toUpperCase()}] ${message}`);
   }
 
-  async fetchPageWithRetry(url, retryCount = 0) {
-    const userAgent = this.getRandomUserAgent();
-    
+  async initBrowser() {
+    if (this.browser) {
+      return this.browser;
+    }
+
     try {
-      this.log(`Tentative ${retryCount + 1} de récupération de ${url}`);
+      this.log('🌐 Initialisation du navigateur Puppeteer...');
       
-      const response = await axios.get(url, {
-        headers: {
-          'User-Agent': userAgent,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-          'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1'
-        },
-        timeout: config.monitoring.requestTimeout,
-        maxRedirects: 5,
-        validateStatus: (status) => status >= 200 && status < 300
+      const args = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process'
+      ];
+
+      const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || 
+                             process.env.CHROME_BIN || 
+                             undefined;
+
+      this.browser = await puppeteer.launch({
+        headless: 'new',
+        args: args,
+        executablePath: executablePath
       });
 
-      const html = response.data;
+      this.log('✅ Navigateur initialisé avec succès');
+      return this.browser;
+    } catch (error) {
+      this.log(`❌ Erreur lors de l'initialisation du navigateur: ${error.message}`, 'error');
+      throw error;
+    }
+  }
+
+  async closeBrowser() {
+    if (this.browser) {
+      await this.browser.close();
+      this.browser = null;
+      this.log('🔒 Navigateur fermé');
+    }
+  }
+
+  async fetchPageWithPuppeteer(url, retryCount = 0) {
+    const userAgent = this.getRandomUserAgent();
+    let page = null;
+
+    try {
+      this.log(`Tentative ${retryCount + 1} avec Puppeteer sur ${url}`);
+      this.log(`User-Agent: ${userAgent.substring(0, 50)}...`);
+
+      const browser = await this.initBrowser();
+      page = await browser.newPage();
+
+      await page.setUserAgent(userAgent);
+      
+      await page.setViewport({ width: 1920, height: 1080 });
+
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      });
+
+      this.log('📡 Chargement de la page...');
+      
+      await page.goto(url, {
+        waitUntil: 'networkidle2',
+        timeout: config.monitoring.requestTimeout
+      });
+
+      this.log('⏳ Attente du chargement des annonces...');
+      
+      try {
+        await page.waitForSelector('[class*="CardRow"]', { 
+          timeout: 5000 
+        });
+        this.log('✅ Sélecteur CardRow détecté');
+      } catch (e) {
+        this.log('⚠️ Sélecteur CardRow non trouvé, continuation quand même', 'warn');
+      }
+
+      await page.waitForTimeout(2000);
+
+      const html = await page.content();
       const htmlSize = html.length;
       
       this.log(`Page récupérée: ${htmlSize} caractères (${(htmlSize / 1024).toFixed(2)} KB)`);
 
-      const $ = cheerio.load(html);
-      const hasHtmlTag = $('html').length > 0;
-      const hasBodyTag = $('body').length > 0;
-      
-      if (!hasHtmlTag || !hasBodyTag || htmlSize < 1000) {
-        this.log(`⚠️ Page incomplète détectée - HTML: ${hasHtmlTag}, BODY: ${hasBodyTag}, Taille: ${htmlSize}`, 'warn');
-        throw new Error('Page HTML incomplète ou trop petite');
+      if (htmlSize < 10000) {
+        throw new Error('Page HTML trop petite, probablement incomplète');
       }
 
-      this.log('✓ Page complète validée avec succès');
+      await page.close();
+      
+      this.log('✓ Page complète récupérée avec succès');
       return html;
 
     } catch (error) {
+      if (page) {
+        await page.close().catch(() => {});
+      }
+
       this.log(`Erreur lors de la récupération (tentative ${retryCount + 1}): ${error.message}`, 'error');
       
       if (retryCount < config.monitoring.maxRetries) {
         const delay = config.monitoring.retryDelays[retryCount];
         this.log(`⏳ Nouvelle tentative dans ${delay}ms...`);
         await this.sleep(delay);
-        return this.fetchPageWithRetry(url, retryCount + 1);
+        return this.fetchPageWithPuppeteer(url, retryCount + 1);
       }
       
       throw new Error(`Échec après ${config.monitoring.maxRetries + 1} tentatives: ${error.message}`);
@@ -109,7 +177,7 @@ class Monitor {
       attempts++;
       
       try {
-        const html = await this.fetchPageWithRetry(url, 0);
+        const html = await this.fetchPageWithPuppeteer(url, 0);
         const count = this.countKeywordOccurrences(html, config.keyword);
         
         this.log(`📊 Résultat tentative ${attempts}: ${count} occurrence(s) de "${config.keyword}"`);
@@ -158,8 +226,8 @@ class Monitor {
 
   async sendStartupNotification() {
     const message = `🚀 <b>QuintoAndar Monitor - Démarrage</b>\n\n` +
-      `✅ Service démarré avec succès\n` +
-      `⏱ Surveillance: Toutes les ${config.monitoring.intervalMinutes} minute(s)\n\n` +
+      `✅ Service démarré avec succès (Puppeteer)\n` +
+      `⏱ Déclenché par cron externe sur /run\n\n` +
       `📍 <b>URLs surveillées:</b>\n` +
       config.urls.map((u, i) => 
         `${i + 1}. ${u.name} (seuil: ≥${u.threshold})`
@@ -171,29 +239,35 @@ class Monitor {
 
   async runMonitoring() {
     this.log('\n' + '█'.repeat(60));
-    this.log('🏠 DÉMARRAGE DU MONITORING QUINTOANDAR');
+    this.log('🏠 DÉMARRAGE DU MONITORING QUINTOANDAR (PUPPETEER)');
     this.log('█'.repeat(60) + '\n');
 
-    for (const urlConfig of config.urls) {
-      try {
-        const count = await this.checkUrlWithRetries(urlConfig);
-        
-        if (count >= urlConfig.threshold) {
-          const message = `🏠 <b>ALERTE ${urlConfig.name}</b>\n\n` +
-            `📊 <b>${count}</b> annonce(s) détectée(s)\n` +
-            `⚠️ Seuil dépassé (≥${urlConfig.threshold})\n\n` +
-            `🔗 <a href="${urlConfig.url}">Voir les annonces</a>`;
-          
-          await this.sendTelegramMessage(message);
-        } else {
-          this.log(`ℹ️ Pas d'alerte pour ${urlConfig.name} (${count} < ${urlConfig.threshold})`);
-        }
-        
-      } catch (error) {
-        this.log(`❌ Erreur critique pour ${urlConfig.name}: ${error.message}`, 'error');
-      }
+    try {
+      await this.initBrowser();
 
-      await this.sleep(2000);
+      for (const urlConfig of config.urls) {
+        try {
+          const count = await this.checkUrlWithRetries(urlConfig);
+          
+          if (count >= urlConfig.threshold) {
+            const message = `🏠 <b>ALERTE ${urlConfig.name}</b>\n\n` +
+              `📊 <b>${count}</b> annonce(s) détectée(s)\n` +
+              `⚠️ Seuil dépassé (≥${urlConfig.threshold})\n\n` +
+              `🔗 <a href="${urlConfig.url}">Voir les annonces</a>`;
+            
+            await this.sendTelegramMessage(message);
+          } else {
+            this.log(`ℹ️ Pas d'alerte pour ${urlConfig.name} (${count} < ${urlConfig.threshold})`);
+          }
+          
+        } catch (error) {
+          this.log(`❌ Erreur critique pour ${urlConfig.name}: ${error.message}`, 'error');
+        }
+
+        await this.sleep(2000);
+      }
+    } finally {
+      await this.closeBrowser();
     }
 
     this.log('\n' + '█'.repeat(60));

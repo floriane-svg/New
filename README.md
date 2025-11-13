@@ -4,11 +4,12 @@ Système de surveillance automatique pour les annonces QuintoAndar avec alertes 
 
 ## 🎯 Fonctionnalités
 
+- ✅ **Puppeteer** : Charge le JavaScript complet comme un vrai navigateur
+- ✅ **Détection instantanée** : Voit les nouvelles annonces immédiatement (pas de délai)
 - ✅ Endpoint `/run` pour déclenchement par cron externe
 - ✅ Détection ultra-robuste du mot-clé avec multiples retries
-- ✅ Extraction complète du code source HTML
-- ✅ Rotation de User-Agents pour éviter les blocages
-- ✅ Seuils d'alerte configurables
+- ✅ Rotation de User-Agents aléatoires à chaque tentative
+- ✅ Seuils d'alerte configurables facilement
 - ✅ Notifications Telegram au démarrage et lors des alertes
 - ✅ Health check pour Render
 - ✅ Compatible avec le plan gratuit de Render (réveillé par cron externe)
@@ -110,10 +111,11 @@ npm start
 
 ## 📝 Notes
 
+- **Puppeteer** charge la page comme un vrai navigateur Chrome (JavaScript complet)
+- **Détection instantanée** des nouvelles annonces dès leur apparition
 - Le service est réveillé par un **cron externe** qui appelle `/run`
 - Chaque vérification peut faire jusqu'à 4 tentatives pour garantir la détection
 - Les User-Agents sont changés aléatoirement à chaque tentative pour éviter les blocages
-- La page HTML est validée pour s'assurer qu'elle est complète
 - Le mot-clé est recherché de manière insensible à la casse
 - Compatible avec le plan gratuit de Render (qui s'endort après 15 min d'inactivité)
 
